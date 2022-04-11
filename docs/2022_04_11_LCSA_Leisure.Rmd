@@ -1,0 +1,240 @@
+---
+title: "RANN Longitudinal with in-scanner and out-of-scanner indicators"
+author: "Seonjoo Lee, Zhiqian Fang"
+date: '`r format(Sys.Date(), "%Y-%B-%d")`'
+output: 
+  html_document:
+    toc: TRUE
+    code_folding: hide
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(textwidth=3000)
+library(dplyr)
+library(tidyverse)
+library(psych)
+library(kableExtra)
+library(knitr)
+library(Matrix)
+library(ggplot2)
+library(ggthemes)
+library(gridExtra)
+library(lavaan)
+library(DT)
+library(sqldf)
+library(stringr)
+library(reshape2)
+library(table1)
+library(sjPlot)
+library(arsenal)
+#setwd("~/Desktop/Practicum/longitudinalRANN/rcodes/longitudinalRANN_ZF")
+#setwd("E:/GoogleDrive/Collaboration/Yaakov/RANN_FU/LCA_RANN/projects/ra_lda_manuscript")
+#setwd("~/Google Drive/Collaboration/Yaakov/RANN_FU/LCA_RANN/projects/ra_lda_manuscript")
+datadir='../../../../RANN_FU/LCA_RANN/projects/ra_lda_manuscript/data_cleaning/'
+load(paste(datadir,"RANN_Fu_data_dtimerged_v4_20200603.Rdata",sep=''))
+# colnames(all_completer)[grep('median',colnames(all_completer))]
+
+
+varlists=c('DgtSym_medianCorRT','PattComp_medianCorRT',
+'LetComp_medianCorRT',
+'MatReas_PropOnTimeCor',
+'PaperFold_PropOnTimeCor', 
+'LetSet_PropOnTimeCor',
+'LogMem_PropOnTimeCor', 
+'PairAssoc_PropOnTimeCor', 
+'WordOrder_PropOnTimeCor',
+'Syn_PropOnTimeCor', 
+'Ant_PropOnTimeCor', 
+'PictName_Prop',
+'WAIS3matRAW',
+'BLKraw',
+'WAIS3letnumRAW',
+'SRTlts',
+'SRTcltr',
+'SRTlast',
+'WAISRdgtsymRAW',
+'TMTAtime',
+'STRPcRAW',
+'WAISRvocRAW',
+'WTARraw',
+'AMNARTerr')
+
+rann=rann_dat %>% mutate(Male = ifelse(Gender=='M',1,0)) 
+rann[rann$subid == '4370','Age_Followup']<-65
+
+rann = rann%>%
+  filter(completer==1) %>%
+  mutate(yeardiff = Age_Followup - Age) 
+rann %>%filter(yeardiff==0) %>% select(subid, Age, Age_Followup)
+
+rann = rann%>%
+  filter(yeardiff>0)
+
+#rann %>% filter(yeardiff ==0)%>% select(subid, Age, Age_Followup)
+#rann %>% filter(subid == '4370') %>% select(subid, Age, Age_Followup)
+
+for (j in 1:24){
+  funame=paste(varlists[j],'_fu',sep='')
+  blname=paste(varlists[j],'_bl',sep='')
+  rann[,funame] = (rann[,funame] - mean(rann[,blname],na.rm=TRUE))/sd(rann[,blname],na.rm=TRUE)
+  rann[,blname] = scale(rann[,blname])
+}
+
+## leisure
+library(foreign)
+leisuredat = data.frame(read.spss('../../../data/Leisure_data_SEM_2021_11_02.sav')) %>%
+  select(SubID, Sex,Ed_bl, FamInc, L18_Total_s, L_Cognitive_6_s, L_Physical_2_s, L_Social_6_s) %>%
+  rename(subid=SubID)
+
+rann2 = left_join(rann, leisuredat) %>%
+  mutate(anal_include = ifelse(is.na(L18_Total_s)==FALSE,1,0)) %>%
+  mutate(anal_include2 = ifelse(is.na(L18_Total_s)==FALSE & is.na(FamInc)==FALSE,1,0)) %>%
+  mutate(L18_Total_sXGender = L18_Total_s * ifelse(Gender=='M',1,0))
+
+rann$subid[rann$subid %in% leisuredat$subid]
+```
+
+```{r, include=FALSE}
+source('lcsm_models_nprann_together_leisure.R')
+rann.scale=rann2%>% mutate(Age=scale(Age), NARTIQ_bl=scale(NARTIQ_bl), Education_bl = scale(Education_bl))
+
+fit.m1_age<-sem(nprann.m1_age,data=rann.scale,missing='FIML')
+fit.m1_total<-sem(nprann.m1_total,data=rann.scale,missing='FIML')
+fit.m1_cog<-sem(nprann.m1_cog,data=rann.scale,missing='FIML')
+fit.m1_phy<-sem(nprann.m1_phy,data=rann.scale,missing='FIML')
+fit.m1_soc<-sem(nprann.m1_soc,data=rann.scale,missing='FIML')
+fit.m1_totalxgender<-sem(nprann.m1_totalxgender,data=rann.scale,missing='FIML')
+```
+
+# Table2 {.tabset}
+
+## Age + Baseline LA {.tabset}
+
+### Parameters
+
+```{r,fig.width=12, fig.height=6}
+kable(rbind(parameterestimates(fit.m1_age,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op == '~1') %>% select(-std.lv, -std.nox,-label),parameterestimates(fit.m1_age,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op=='~') %>% select(-std.lv, -std.nox,-label)
+),
+digits=3) %>%
+  kable_styling(c("striped", "bordered"), full=F)
+  
+kable(t(data.frame(fit=fitMeasures(fit.m1_age, c('cfi','tli','bic','rmsea','rmsea.ci.lower','rmsea.ci.upper','rmsea.pvalue')))),digits=3)%>%
+  kable_styling(c("striped", "bordered"), full=F)
+```
+
+### Full summary
+```{r}
+summary(fit.m1_age)
+```
+
+
+## Age + Baseline LA + Covariates {.tabset}
+
+* Covariates includes Gender, Euducation, Famly Income
+
+### Parameters
+
+```{r,fig.width=12, fig.height=6}
+obj=fit.m1_total
+kable(rbind(parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op == '~1') %>% select(-std.lv, -std.nox,-label),parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op=='~') %>% select(-std.lv, -std.nox,-label)
+),
+digits=3) %>%
+  kable_styling(c("striped", "bordered"), full=F)
+  
+kable(t(data.frame(fit=fitMeasures(obj, c('cfi','tli','bic','rmsea','rmsea.ci.lower','rmsea.ci.upper','rmsea.pvalue')))),digits=3)%>%
+  kable_styling(c("striped", "bordered"), full=F)
+```
+
+### Full summary
+```{r}
+summary(obj)
+```
+
+# Table3 {.tabset}
+
+## Age + Baseline Intellect LA {.tabset}
+
+### Parameters
+
+```{r,fig.width=12, fig.height=6}
+obj=fit.m1_cog
+kable(rbind(parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op == '~1') %>% select(-std.lv, -std.nox,-label),parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op=='~') %>% select(-std.lv, -std.nox,-label)
+),
+digits=3) %>%
+  kable_styling(c("striped", "bordered"), full=F)
+  
+kable(t(data.frame(fit=fitMeasures(obj, c('cfi','tli','bic','rmsea','rmsea.ci.lower','rmsea.ci.upper','rmsea.pvalue')))),digits=3)%>%
+  kable_styling(c("striped", "bordered"), full=F)
+```
+
+### Full summary
+```{r}
+summary(obj)
+```
+
+
+## Age + Baseline social LA {.tabset}
+
+### Parameters
+
+```{r,fig.width=12, fig.height=6}
+obj=fit.m1_soc
+kable(rbind(parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op == '~1') %>% select(-std.lv, -std.nox,-label),parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op=='~') %>% select(-std.lv, -std.nox,-label)
+),
+digits=3) %>%
+  kable_styling(c("striped", "bordered"), full=F)
+  
+kable(t(data.frame(fit=fitMeasures(obj, c('cfi','tli','bic','rmsea','rmsea.ci.lower','rmsea.ci.upper','rmsea.pvalue')))),digits=3)%>%
+  kable_styling(c("striped", "bordered"), full=F)
+```
+
+### Full summary
+```{r}
+summary(obj)
+```
+
+
+## Age + Baseline Physical LA {.tabset}
+
+### Parameters
+
+```{r,fig.width=12, fig.height=6}
+obj=fit.m1_phy
+kable(rbind(parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op == '~1') %>% select(-std.lv, -std.nox,-label),parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op=='~') %>% select(-std.lv, -std.nox,-label)
+),
+digits=3) %>%
+  kable_styling(c("striped", "bordered"), full=F)
+  
+kable(t(data.frame(fit=fitMeasures(obj, c('cfi','tli','bic','rmsea','rmsea.ci.lower','rmsea.ci.upper','rmsea.pvalue')))),digits=3)%>%
+  kable_styling(c("striped", "bordered"), full=F)
+```
+
+### Full summary
+```{r}
+summary(obj)
+```
+
+
+# Table4 Interaction
+
+## Total x Gender interaction {.tabset}
+
+### Parameters
+
+```{r,fig.width=12, fig.height=6}
+obj=fit.m1_totalxgender
+kable(rbind(parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op == '~1') %>% select(-std.lv, -std.nox,-label),parameterestimates(obj,standardized = TRUE) %>% filter(lhs %in% c('flcs','slcs','mlcs','vlcs') & op=='~') %>% select(-std.lv, -std.nox,-label)
+),
+digits=3) %>%
+  kable_styling(c("striped", "bordered"), full=F)
+  
+kable(t(data.frame(fit=fitMeasures(obj, c('cfi','tli','bic','rmsea','rmsea.ci.lower','rmsea.ci.upper','rmsea.pvalue')))),digits=3)%>%
+  kable_styling(c("striped", "bordered"), full=F)
+```
+
+### Full summary
+```{r}
+summary(obj)
+```

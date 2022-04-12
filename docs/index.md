@@ -2,9 +2,11 @@
 
 ## Primary Latent Change Score Analysis (LCCA)
 
-In the model, no covariate was adjusted. 
+The primary LCSA model used to estimate the latent factor scores is reported in the link below.
 
-An R markdown file is available. [link](2022_03_15_RANN_LCSA_no_covariate_model_n254_Leisure.html)
+In the model, no covariate was adjusted, and measurement and factor loading invariance over the time are established.
+
+[link](2022_03_15_RANN_LCSA_no_covariate_model_n254_Leisure.html)
 
 
 ## Full LCSA model for each hypotheses 
